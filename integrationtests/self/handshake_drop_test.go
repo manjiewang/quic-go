@@ -63,7 +63,7 @@ var _ = Describe("Handshake drop tests", func() {
 				sess, err := ln.Accept(context.Background())
 				Expect(err).ToNot(HaveOccurred())
 				defer sess.Close()
-				str, err := sess.AcceptStream()
+				str, err := sess.AcceptStream(context.Background())
 				Expect(err).ToNot(HaveOccurred())
 				b := make([]byte, 6)
 				_, err = gbytes.TimeoutReader(str, 10*time.Second).Read(b)
@@ -109,7 +109,7 @@ var _ = Describe("Handshake drop tests", func() {
 				&quic.Config{Versions: []protocol.VersionNumber{version}},
 			)
 			Expect(err).ToNot(HaveOccurred())
-			str, err := sess.AcceptStream()
+			str, err := sess.AcceptStream(context.Background())
 			Expect(err).ToNot(HaveOccurred())
 			b := make([]byte, 6)
 			_, err = gbytes.TimeoutReader(str, 10*time.Second).Read(b)

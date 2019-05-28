@@ -1,6 +1,7 @@
 package quic
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -101,12 +102,12 @@ func (m *streamsMap) OpenUniStreamSync() (SendStream, error) {
 	return m.outgoingUniStreams.OpenStreamSync()
 }
 
-func (m *streamsMap) AcceptStream() (Stream, error) {
-	return m.incomingBidiStreams.AcceptStream()
+func (m *streamsMap) AcceptStream(ctx context.Context) (Stream, error) {
+	return m.incomingBidiStreams.AcceptStream(ctx)
 }
 
-func (m *streamsMap) AcceptUniStream() (ReceiveStream, error) {
-	return m.incomingUniStreams.AcceptStream()
+func (m *streamsMap) AcceptUniStream(ctx context.Context) (ReceiveStream, error) {
+	return m.incomingUniStreams.AcceptStream(ctx)
 }
 
 func (m *streamsMap) DeleteStream(id protocol.StreamID) error {

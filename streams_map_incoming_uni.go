@@ -5,6 +5,7 @@
 package quic
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -52,16 +53,16 @@ func newIncomingUniStreamsMap(
 	}
 }
 
-func (m *incomingUniStreamsMap) AcceptStream() (receiveStreamI, error) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
+func (m *incomingUniStreamsMap) AcceptStream(ctx context.Context) (receiveStreamI, error) {
 	var id protocol.StreamID
 	var str receiveStreamI
+
+	m.mutex.Lock()
 	for {
 		id = m.nextStreamToAccept
 		var ok bool
 		if m.closeErr != nil {
+			m.mutex.Unlock()
 			return nil, m.closeErr
 		}
 		str, ok = m.streams[id]
@@ -69,7 +70,11 @@ func (m *incomingUniStreamsMap) AcceptStream() (receiveStreamI, error) {
 			break
 		}
 		m.mutex.Unlock()
-		<-m.newStreamChan
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-m.newStreamChan:
+		}
 		m.mutex.Lock()
 	}
 	m.nextStreamToAccept += 4
@@ -77,9 +82,11 @@ func (m *incomingUniStreamsMap) AcceptStream() (receiveStreamI, error) {
 	if _, ok := m.streamsToDelete[id]; ok {
 		delete(m.streamsToDelete, id)
 		if err := m.deleteStream(id); err != nil {
+			m.mutex.Unlock()
 			return nil, err
 		}
 	}
+	m.mutex.Unlock()
 	return str, nil
 }
 

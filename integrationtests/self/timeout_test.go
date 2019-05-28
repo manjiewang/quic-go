@@ -97,7 +97,7 @@ var _ = Describe("Timeout tests", func() {
 			&quic.Config{IdleTimeout: idleTimeout},
 		)
 		Expect(err).ToNot(HaveOccurred())
-		strIn, err := sess.AcceptStream()
+		strIn, err := sess.AcceptStream(context.Background())
 		Expect(err).ToNot(HaveOccurred())
 		strOut, err := sess.OpenStream()
 		Expect(err).ToNot(HaveOccurred())
@@ -118,9 +118,9 @@ var _ = Describe("Timeout tests", func() {
 		checkTimeoutError(err)
 		_, err = sess.OpenUniStream()
 		checkTimeoutError(err)
-		_, err = sess.AcceptStream()
+		_, err = sess.AcceptStream(context.Background())
 		checkTimeoutError(err)
-		_, err = sess.AcceptUniStream()
+		_, err = sess.AcceptUniStream(context.Background())
 		checkTimeoutError(err)
 	})
 
@@ -150,7 +150,7 @@ var _ = Describe("Timeout tests", func() {
 				defer GinkgoRecover()
 				sess, err := server.Accept(context.Background())
 				Expect(err).ToNot(HaveOccurred())
-				sess.AcceptStream() // blocks until the session is closed
+				sess.AcceptStream(context.Background()) // blocks until the session is closed
 				close(serverSessionClosed)
 			}()
 
@@ -164,7 +164,7 @@ var _ = Describe("Timeout tests", func() {
 			done := make(chan struct{})
 			go func() {
 				defer GinkgoRecover()
-				_, err := sess.AcceptStream()
+				_, err := sess.AcceptStream(context.Background())
 				checkTimeoutError(err)
 				close(done)
 			}()
@@ -191,7 +191,7 @@ var _ = Describe("Timeout tests", func() {
 				defer GinkgoRecover()
 				sess, err := server.Accept(context.Background())
 				Expect(err).ToNot(HaveOccurred())
-				sess.AcceptStream() // blocks until the session is closed
+				sess.AcceptStream(context.Background()) // blocks until the session is closed
 				close(serverSessionClosed)
 			}()
 
@@ -214,7 +214,7 @@ var _ = Describe("Timeout tests", func() {
 			done := make(chan struct{})
 			go func() {
 				defer GinkgoRecover()
-				_, err := sess.AcceptStream()
+				_, err := sess.AcceptStream(context.Background())
 				checkTimeoutError(err)
 				close(done)
 			}()

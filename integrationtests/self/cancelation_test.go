@@ -78,7 +78,7 @@ var _ = Describe("Stream Cancelations", func() {
 				go func() {
 					defer GinkgoRecover()
 					defer wg.Done()
-					str, err := sess.AcceptUniStream()
+					str, err := sess.AcceptUniStream(context.Background())
 					Expect(err).ToNot(HaveOccurred())
 					// cancel around 2/3 of the streams
 					if rand.Int31()%3 != 0 {
@@ -122,7 +122,7 @@ var _ = Describe("Stream Cancelations", func() {
 				go func() {
 					defer GinkgoRecover()
 					defer wg.Done()
-					str, err := sess.AcceptUniStream()
+					str, err := sess.AcceptUniStream(context.Background())
 					Expect(err).ToNot(HaveOccurred())
 					// only read some data from about 1/3 of the streams
 					if rand.Int31()%3 != 0 {
@@ -170,7 +170,7 @@ var _ = Describe("Stream Cancelations", func() {
 				go func() {
 					defer GinkgoRecover()
 					defer wg.Done()
-					str, err := sess.AcceptUniStream()
+					str, err := sess.AcceptUniStream(context.Background())
 					Expect(err).ToNot(HaveOccurred())
 					data, err := ioutil.ReadAll(str)
 					if err != nil {
@@ -306,7 +306,7 @@ var _ = Describe("Stream Cancelations", func() {
 				go func() {
 					defer GinkgoRecover()
 					defer wg.Done()
-					str, err := sess.AcceptUniStream()
+					str, err := sess.AcceptUniStream(context.Background())
 					Expect(err).ToNot(HaveOccurred())
 					// cancel around half of the streams
 					if rand.Int31()%2 == 0 {
@@ -385,7 +385,7 @@ var _ = Describe("Stream Cancelations", func() {
 					defer GinkgoRecover()
 					defer wg.Done()
 
-					str, err := sess.AcceptUniStream()
+					str, err := sess.AcceptUniStream(context.Background())
 					Expect(err).ToNot(HaveOccurred())
 
 					r := io.Reader(str)

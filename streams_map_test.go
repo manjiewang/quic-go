@@ -1,6 +1,7 @@
 package quic
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -114,7 +115,7 @@ var _ = Describe("Streams Map", func() {
 				It("accepts bidirectional streams", func() {
 					_, err := m.GetOrOpenReceiveStream(ids.firstIncomingBidiStream)
 					Expect(err).ToNot(HaveOccurred())
-					str, err := m.AcceptStream()
+					str, err := m.AcceptStream(context.Background())
 					Expect(err).ToNot(HaveOccurred())
 					Expect(str).To(BeAssignableToTypeOf(&stream{}))
 					Expect(str.StreamID()).To(Equal(ids.firstIncomingBidiStream))
@@ -123,7 +124,7 @@ var _ = Describe("Streams Map", func() {
 				It("accepts unidirectional streams", func() {
 					_, err := m.GetOrOpenReceiveStream(ids.firstIncomingUniStream)
 					Expect(err).ToNot(HaveOccurred())
-					str, err := m.AcceptUniStream()
+					str, err := m.AcceptUniStream(context.Background())
 					Expect(err).ToNot(HaveOccurred())
 					Expect(str).To(BeAssignableToTypeOf(&receiveStream{}))
 					Expect(str.StreamID()).To(Equal(ids.firstIncomingUniStream))
@@ -163,7 +164,7 @@ var _ = Describe("Streams Map", func() {
 					_, err := m.GetOrOpenReceiveStream(id)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(m.DeleteStream(id)).To(Succeed())
-					str, err := m.AcceptStream()
+					str, err := m.AcceptStream(context.Background())
 					Expect(err).ToNot(HaveOccurred())
 					Expect(str).ToNot(BeNil())
 					Expect(str.StreamID()).To(Equal(id))
@@ -196,7 +197,7 @@ var _ = Describe("Streams Map", func() {
 					_, err := m.GetOrOpenReceiveStream(id)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(m.DeleteStream(id)).To(Succeed())
-					str, err := m.AcceptUniStream()
+					str, err := m.AcceptUniStream(context.Background())
 					Expect(err).ToNot(HaveOccurred())
 					Expect(str).ToNot(BeNil())
 					Expect(str.StreamID()).To(Equal(id))
@@ -379,7 +380,7 @@ var _ = Describe("Streams Map", func() {
 				It("sends a MAX_STREAMS frame for bidirectional streams", func() {
 					_, err := m.GetOrOpenReceiveStream(ids.firstIncomingBidiStream)
 					Expect(err).ToNot(HaveOccurred())
-					_, err = m.AcceptStream()
+					_, err = m.AcceptStream(context.Background())
 					Expect(err).ToNot(HaveOccurred())
 					mockSender.EXPECT().queueControlFrame(&wire.MaxStreamsFrame{
 						Type:       protocol.StreamTypeBidi,
@@ -391,7 +392,7 @@ var _ = Describe("Streams Map", func() {
 				It("sends a MAX_STREAMS frame for unidirectional streams", func() {
 					_, err := m.GetOrOpenReceiveStream(ids.firstIncomingUniStream)
 					Expect(err).ToNot(HaveOccurred())
-					_, err = m.AcceptUniStream()
+					_, err = m.AcceptUniStream(context.Background())
 					Expect(err).ToNot(HaveOccurred())
 					mockSender.EXPECT().queueControlFrame(&wire.MaxStreamsFrame{
 						Type:       protocol.StreamTypeUni,
@@ -410,10 +411,10 @@ var _ = Describe("Streams Map", func() {
 				_, err = m.OpenUniStream()
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(Equal(testErr.Error()))
-				_, err = m.AcceptStream()
+				_, err = m.AcceptStream(context.Background())
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(Equal(testErr.Error()))
-				_, err = m.AcceptUniStream()
+				_, err = m.AcceptUniStream(context.Background())
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(Equal(testErr.Error()))
 			})

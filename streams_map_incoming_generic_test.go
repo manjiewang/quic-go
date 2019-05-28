@@ -1,6 +1,7 @@
 package quic
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -24,7 +25,7 @@ func (s *mockGenericStream) closeForShutdown(err error) {
 	s.closeErr = err
 }
 
-var _ = Describe("Streams Map (incoming)", func() {
+var _ = FDescribe("Streams Map (incoming)", func() {
 	const (
 		firstNewStream   protocol.StreamID = 2
 		maxNumStreams    uint64            = 5
@@ -67,10 +68,10 @@ var _ = Describe("Streams Map (incoming)", func() {
 	It("accepts streams in the right order", func() {
 		_, err := m.GetOrOpenStream(firstNewStream + 4) // open stream 20 and 24
 		Expect(err).ToNot(HaveOccurred())
-		str, err := m.AcceptStream()
+		str, err := m.AcceptStream(context.Background())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(str.(*mockGenericStream).id).To(Equal(firstNewStream))
-		str, err = m.AcceptStream()
+		str, err = m.AcceptStream(context.Background())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(str.(*mockGenericStream).id).To(Equal(firstNewStream + 4))
 	})
@@ -90,7 +91,7 @@ var _ = Describe("Streams Map (incoming)", func() {
 		strChan := make(chan item)
 		go func() {
 			defer GinkgoRecover()
-			str, err := m.AcceptStream()
+			str, err := m.AcceptStream(context.Background())
 			Expect(err).ToNot(HaveOccurred())
 			strChan <- str
 		}()
@@ -108,7 +109,7 @@ var _ = Describe("Streams Map (incoming)", func() {
 		strChan := make(chan item)
 		go func() {
 			defer GinkgoRecover()
-			str, err := m.AcceptStream()
+			str, err := m.AcceptStream(context.Background())
 			Expect(err).ToNot(HaveOccurred())
 			strChan <- str
 		}()
@@ -121,12 +122,26 @@ var _ = Describe("Streams Map (incoming)", func() {
 		Expect(acceptedStr.(*mockGenericStream).id).To(BeZero())
 	})
 
+	It("unblocks AcceptStream when the context is canceled", func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			defer GinkgoRecover()
+			_, err := m.AcceptStream(ctx)
+			Expect(err).To(MatchError("context canceled"))
+			close(done)
+		}()
+		Consistently(done).ShouldNot(BeClosed())
+		cancel()
+		Eventually(done).Should(BeClosed())
+	})
+
 	It("unblocks AcceptStream when it is closed", func() {
 		testErr := errors.New("test error")
 		done := make(chan struct{})
 		go func() {
 			defer GinkgoRecover()
-			_, err := m.AcceptStream()
+			_, err := m.AcceptStream(context.Background())
 			Expect(err).To(MatchError(testErr))
 			close(done)
 		}()
@@ -138,7 +153,7 @@ var _ = Describe("Streams Map (incoming)", func() {
 	It("errors AcceptStream immediately if it is closed", func() {
 		testErr := errors.New("test error")
 		m.CloseWithError(testErr)
-		_, err := m.AcceptStream()
+		_, err := m.AcceptStream(context.Background())
 		Expect(err).To(MatchError(testErr))
 	})
 
@@ -159,7 +174,7 @@ var _ = Describe("Streams Map (incoming)", func() {
 		mockSender.EXPECT().queueControlFrame(gomock.Any())
 		_, err := m.GetOrOpenStream(firstNewStream)
 		Expect(err).ToNot(HaveOccurred())
-		str, err := m.AcceptStream()
+		str, err := m.AcceptStream(context.Background())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(str.(*mockGenericStream).id).To(Equal(firstNewStream))
 		Expect(m.DeleteStream(firstNewStream)).To(Succeed())
@@ -172,12 +187,12 @@ var _ = Describe("Streams Map (incoming)", func() {
 		_, err := m.GetOrOpenStream(firstNewStream + 4)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(m.DeleteStream(firstNewStream + 4)).To(Succeed())
-		str, err := m.AcceptStream()
+		str, err := m.AcceptStream(context.Background())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(str.(*mockGenericStream).id).To(Equal(firstNewStream))
 		// when accepting this stream, it will get deleted, and a MAX_STREAMS frame is queued
 		mockSender.EXPECT().queueControlFrame(gomock.Any())
-		str, err = m.AcceptStream()
+		str, err = m.AcceptStream(context.Background())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(str.(*mockGenericStream).id).To(Equal(firstNewStream + 4))
 	})
@@ -192,7 +207,7 @@ var _ = Describe("Streams Map (incoming)", func() {
 		Expect(str).To(BeNil())
 		// when accepting this stream, it will get deleted, and a MAX_STREAMS frame is queued
 		mockSender.EXPECT().queueControlFrame(gomock.Any())
-		str, err = m.AcceptStream()
+		str, err = m.AcceptStream(context.Background())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(str).ToNot(BeNil())
 	})
@@ -208,7 +223,7 @@ var _ = Describe("Streams Map (incoming)", func() {
 		Expect(err).ToNot(HaveOccurred())
 		// accept all streams
 		for i := 0; i < 5; i++ {
-			_, err := m.AcceptStream()
+			_, err := m.AcceptStream(context.Background())
 			Expect(err).ToNot(HaveOccurred())
 		}
 		mockSender.EXPECT().queueControlFrame(gomock.Any()).Do(func(f wire.Frame) {
