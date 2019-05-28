@@ -13,8 +13,8 @@ import (
 )
 
 type incomingUniStreamsMap struct {
-	mutex sync.RWMutex
-	cond  sync.Cond
+	mutex         sync.RWMutex
+	newStreamChan chan struct{}
 
 	streams map[protocol.StreamID]receiveStreamI
 	// When a stream is deleted before it was accepted, we can't delete it immediately.
@@ -39,7 +39,8 @@ func newIncomingUniStreamsMap(
 	queueControlFrame func(wire.Frame),
 	newStream func(protocol.StreamID) receiveStreamI,
 ) *incomingUniStreamsMap {
-	m := &incomingUniStreamsMap{
+	return &incomingUniStreamsMap{
+		newStreamChan:      make(chan struct{}),
 		streams:            make(map[protocol.StreamID]receiveStreamI),
 		streamsToDelete:    make(map[protocol.StreamID]struct{}),
 		nextStreamToAccept: nextStreamToAccept,
@@ -49,8 +50,6 @@ func newIncomingUniStreamsMap(
 		newStream:          newStream,
 		queueMaxStreamID:   func(f *wire.MaxStreamsFrame) { queueControlFrame(f) },
 	}
-	m.cond.L = &m.mutex
-	return m
 }
 
 func (m *incomingUniStreamsMap) AcceptStream() (receiveStreamI, error) {
@@ -69,7 +68,9 @@ func (m *incomingUniStreamsMap) AcceptStream() (receiveStreamI, error) {
 		if ok {
 			break
 		}
-		m.cond.Wait()
+		m.mutex.Unlock()
+		<-m.newStreamChan
+		m.mutex.Lock()
 	}
 	m.nextStreamToAccept += 4
 	// If this stream was completed before being accepted, we can delete it now.
@@ -108,7 +109,10 @@ func (m *incomingUniStreamsMap) GetOrOpenStream(id protocol.StreamID) (receiveSt
 	// * highestStream is only modified by this function
 	for newID := m.nextStreamToOpen; newID <= id; newID += 4 {
 		m.streams[newID] = m.newStream(newID)
-		m.cond.Signal()
+		select {
+		case m.newStreamChan <- struct{}{}:
+		default:
+		}
 	}
 	m.nextStreamToOpen = id + 4
 	s := m.streams[id]
@@ -158,5 +162,5 @@ func (m *incomingUniStreamsMap) CloseWithError(err error) {
 		str.closeForShutdown(err)
 	}
 	m.mutex.Unlock()
-	m.cond.Broadcast()
+	close(m.newStreamChan)
 }

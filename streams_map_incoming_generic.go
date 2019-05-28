@@ -11,8 +11,8 @@ import (
 //go:generate genny -in $GOFILE -out streams_map_incoming_bidi.go gen "item=streamI Item=BidiStream streamTypeGeneric=protocol.StreamTypeBidi"
 //go:generate genny -in $GOFILE -out streams_map_incoming_uni.go gen "item=receiveStreamI Item=UniStream streamTypeGeneric=protocol.StreamTypeUni"
 type incomingItemsMap struct {
-	mutex sync.RWMutex
-	cond  sync.Cond
+	mutex         sync.RWMutex
+	newStreamChan chan struct{}
 
 	streams map[protocol.StreamID]item
 	// When a stream is deleted before it was accepted, we can't delete it immediately.
@@ -37,7 +37,8 @@ func newIncomingItemsMap(
 	queueControlFrame func(wire.Frame),
 	newStream func(protocol.StreamID) item,
 ) *incomingItemsMap {
-	m := &incomingItemsMap{
+	return &incomingItemsMap{
+		newStreamChan:      make(chan struct{}),
 		streams:            make(map[protocol.StreamID]item),
 		streamsToDelete:    make(map[protocol.StreamID]struct{}),
 		nextStreamToAccept: nextStreamToAccept,
@@ -47,8 +48,6 @@ func newIncomingItemsMap(
 		newStream:          newStream,
 		queueMaxStreamID:   func(f *wire.MaxStreamsFrame) { queueControlFrame(f) },
 	}
-	m.cond.L = &m.mutex
-	return m
 }
 
 func (m *incomingItemsMap) AcceptStream() (item, error) {
@@ -67,7 +66,9 @@ func (m *incomingItemsMap) AcceptStream() (item, error) {
 		if ok {
 			break
 		}
-		m.cond.Wait()
+		m.mutex.Unlock()
+		<-m.newStreamChan
+		m.mutex.Lock()
 	}
 	m.nextStreamToAccept += 4
 	// If this stream was completed before being accepted, we can delete it now.
@@ -106,7 +107,10 @@ func (m *incomingItemsMap) GetOrOpenStream(id protocol.StreamID) (item, error) {
 	// * highestStream is only modified by this function
 	for newID := m.nextStreamToOpen; newID <= id; newID += 4 {
 		m.streams[newID] = m.newStream(newID)
-		m.cond.Signal()
+		select {
+		case m.newStreamChan <- struct{}{}:
+		default:
+		}
 	}
 	m.nextStreamToOpen = id + 4
 	s := m.streams[id]
@@ -156,5 +160,5 @@ func (m *incomingItemsMap) CloseWithError(err error) {
 		str.closeForShutdown(err)
 	}
 	m.mutex.Unlock()
-	m.cond.Broadcast()
+	close(m.newStreamChan)
 }
