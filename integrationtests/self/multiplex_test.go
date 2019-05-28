@@ -1,6 +1,7 @@
 package self_test
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io/ioutil"
@@ -27,7 +28,7 @@ var _ = Describe("Multiplexing", func() {
 				go func() {
 					defer GinkgoRecover()
 					for {
-						sess, err := ln.Accept()
+						sess, err := ln.Accept(context.Background())
 						if err != nil {
 							return
 						}

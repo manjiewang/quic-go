@@ -1,6 +1,7 @@
 package self
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"math/rand"
@@ -34,7 +35,7 @@ var _ = Describe("Stateless Resets", func() {
 
 			go func() {
 				defer GinkgoRecover()
-				sess, err := ln.Accept()
+				sess, err := ln.Accept(context.Background())
 				Expect(err).ToNot(HaveOccurred())
 				str, err := sess.OpenStream()
 				Expect(err).ToNot(HaveOccurred())
@@ -87,7 +88,7 @@ var _ = Describe("Stateless Resets", func() {
 			acceptStopped := make(chan struct{})
 			go func() {
 				defer GinkgoRecover()
-				_, err := ln2.Accept()
+				_, err := ln2.Accept(context.Background())
 				Expect(err).To(HaveOccurred())
 				close(acceptStopped)
 			}()

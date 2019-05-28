@@ -72,7 +72,7 @@ var _ = Describe("Timeout tests", func() {
 
 		go func() {
 			defer GinkgoRecover()
-			sess, err := server.Accept()
+			sess, err := server.Accept(context.Background())
 			Expect(err).ToNot(HaveOccurred())
 			str, err := sess.OpenStream()
 			Expect(err).ToNot(HaveOccurred())
@@ -148,7 +148,7 @@ var _ = Describe("Timeout tests", func() {
 			serverSessionClosed := make(chan struct{})
 			go func() {
 				defer GinkgoRecover()
-				sess, err := server.Accept()
+				sess, err := server.Accept(context.Background())
 				Expect(err).ToNot(HaveOccurred())
 				sess.AcceptStream() // blocks until the session is closed
 				close(serverSessionClosed)
@@ -189,7 +189,7 @@ var _ = Describe("Timeout tests", func() {
 			serverSessionClosed := make(chan struct{})
 			go func() {
 				defer GinkgoRecover()
-				sess, err := server.Accept()
+				sess, err := server.Accept(context.Background())
 				Expect(err).ToNot(HaveOccurred())
 				sess.AcceptStream() // blocks until the session is closed
 				close(serverSessionClosed)

@@ -1,6 +1,7 @@
 package self_test
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	mrand "math/rand"
@@ -59,7 +60,7 @@ var _ = Describe("Handshake drop tests", func() {
 			serverSessionChan := make(chan quic.Session)
 			go func() {
 				defer GinkgoRecover()
-				sess, err := ln.Accept()
+				sess, err := ln.Accept(context.Background())
 				Expect(err).ToNot(HaveOccurred())
 				defer sess.Close()
 				str, err := sess.AcceptStream()
@@ -94,7 +95,7 @@ var _ = Describe("Handshake drop tests", func() {
 			serverSessionChan := make(chan quic.Session)
 			go func() {
 				defer GinkgoRecover()
-				sess, err := ln.Accept()
+				sess, err := ln.Accept(context.Background())
 				Expect(err).ToNot(HaveOccurred())
 				str, err := sess.OpenStream()
 				Expect(err).ToNot(HaveOccurred())
@@ -128,7 +129,7 @@ var _ = Describe("Handshake drop tests", func() {
 			serverSessionChan := make(chan quic.Session)
 			go func() {
 				defer GinkgoRecover()
-				sess, err := ln.Accept()
+				sess, err := ln.Accept(context.Background())
 				Expect(err).ToNot(HaveOccurred())
 				serverSessionChan <- sess
 			}()
