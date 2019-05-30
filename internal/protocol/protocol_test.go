@@ -15,4 +15,12 @@ var _ = Describe("Protocol", func() {
 			Expect(PacketType(10).String()).To(Equal("unknown packet type: 10"))
 		})
 	})
+
+	Context("Key Phases", func() {
+		It("has the correct string representation", func() {
+			Expect(KeyPhaseUndefined.String()).To(Equal("undefined"))
+			Expect(KeyPhaseZero.String()).To(Equal("0"))
+			Expect(KeyPhaseOne.String()).To(Equal("1"))
+		})
+	})
 })

@@ -34,6 +34,28 @@ func (t PacketType) String() string {
 	}
 }
 
+// KeyPhase is the key phase
+type KeyPhase uint8
+
+const (
+	KeyPhaseUndefined KeyPhase = iota
+	// KeyPhaseZero is key phase 0
+	KeyPhaseZero
+	// KeyPhaseOne is key phase 1
+	KeyPhaseOne
+)
+
+func (p KeyPhase) String() string {
+	switch p {
+	case KeyPhaseZero:
+		return "0"
+	case KeyPhaseOne:
+		return "1"
+	default:
+		return "undefined"
+	}
+}
+
 // A ByteCount in QUIC
 type ByteCount uint64
 
