@@ -568,13 +568,16 @@ func (h *cryptoSetup) GetSealer() (protocol.EncryptionLevel, Sealer) {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 
-	if h.sealer != nil {
-		return protocol.Encryption1RTT, h.sealer
-	}
-	if h.handshakeSealer != nil {
+	switch h.writeEncLevel {
+	case protocol.EncryptionInitial:
+		return protocol.EncryptionInitial, h.initialSealer
+	case protocol.EncryptionHandshake:
 		return protocol.EncryptionHandshake, h.handshakeSealer
+	case protocol.Encryption1RTT:
+		return protocol.Encryption1RTT, h.sealer
+	default:
+		panic("")
 	}
-	return protocol.EncryptionInitial, h.initialSealer
 }
 
 func (h *cryptoSetup) GetSealerWithEncryptionLevel(level protocol.EncryptionLevel) (Sealer, error) {
