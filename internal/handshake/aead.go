@@ -7,6 +7,22 @@ import (
 	"github.com/lucas-clemente/quic-go/internal/protocol"
 )
 
+type aead struct {
+	sealer Sealer
+	opener Opener
+}
+
+func (h *aead) SetWriteKey(aead cipher.AEAD, hpEncrypter cipher.Block, is1RTT bool) {
+	h.sealer = newSealer(aead, hpEncrypter, is1RTT)
+}
+
+func (h *aead) SetReadKey(aead cipher.AEAD, hpEncrypter cipher.Block, is1RTT bool) {
+	h.opener = newOpener(aead, hpEncrypter, is1RTT)
+}
+
+func (h *aead) GetOpener() Opener { return h.opener }
+func (h *aead) GetSealer() Sealer { return h.sealer }
+
 type sealer struct {
 	aead        cipher.AEAD
 	hpEncrypter cipher.Block

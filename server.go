@@ -506,10 +506,11 @@ func (s *server) sendRetry(remoteAddr net.Addr, hdr *wire.Header) error {
 }
 
 func (s *server) sendServerBusy(remoteAddr net.Addr, hdr *wire.Header) error {
-	sealer, _, err := handshake.NewInitialAEAD(hdr.DestConnectionID, protocol.PerspectiveServer)
+	aead, err := handshake.NewInitialAEAD(hdr.DestConnectionID, protocol.PerspectiveServer)
 	if err != nil {
 		return err
 	}
+	sealer := aead.GetSealer()
 	packetBuffer := getPacketBuffer()
 	defer packetBuffer.Release()
 	buf := bytes.NewBuffer(packetBuffer.Slice[:0])

@@ -105,16 +105,13 @@ type cryptoSetup struct {
 	writeEncLevel protocol.EncryptionLevel
 
 	initialStream io.Writer
-	initialOpener Opener
-	initialSealer Sealer
+	initialAEAD   *aead
 
 	handshakeStream io.Writer
-	handshakeOpener Opener
-	handshakeSealer Sealer
+	handshakeAEAD   *aead
 
 	oneRTTStream io.Writer
-	opener       Opener
-	sealer       Sealer
+	oneRTTAEAD   *aead
 }
 
 var _ qtls.RecordLayer = &cryptoSetup{}
@@ -191,15 +188,16 @@ func newCryptoSetup(
 	logger utils.Logger,
 	perspective protocol.Perspective,
 ) (*cryptoSetup, <-chan struct{} /* ClientHello written */, error) {
-	initialSealer, initialOpener, err := NewInitialAEAD(connID, perspective)
+	initialAEAD, err := NewInitialAEAD(connID, perspective)
 	if err != nil {
 		return nil, nil, err
 	}
 	extHandler := newExtensionHandler(tp.Marshal(), perspective)
 	cs := &cryptoSetup{
 		initialStream:          initialStream,
-		initialSealer:          initialSealer,
-		initialOpener:          initialOpener,
+		initialAEAD:            initialAEAD,
+		handshakeAEAD:          &aead{},
+		oneRTTAEAD:             &aead{},
 		handshakeStream:        handshakeStream,
 		oneRTTStream:           oneRTTStream,
 		readEncLevel:           protocol.EncryptionInitial,
@@ -223,30 +221,27 @@ func newCryptoSetup(
 }
 
 func (h *cryptoSetup) ChangeConnectionID(id protocol.ConnectionID) error {
-	initialSealer, initialOpener, err := NewInitialAEAD(id, h.perspective)
+	initialAEAD, err := NewInitialAEAD(id, h.perspective)
 	if err != nil {
 		return err
 	}
-	h.initialSealer = initialSealer
-	h.initialOpener = initialOpener
+	h.initialAEAD = initialAEAD
 	return nil
 }
 
 func (h *cryptoSetup) Received1RTTAck() {
 	// drop initial keys
 	// TODO: do this earlier
-	if h.initialOpener != nil {
-		h.initialOpener = nil
-		h.initialSealer = nil
+	if h.initialAEAD != nil {
+		h.initialAEAD = nil
 		h.runner.DropKeys(protocol.EncryptionInitial)
 		h.logger.Debugf("Dropping Initial keys.")
 	}
 	// drop handshake keys
-	if h.handshakeOpener != nil {
-		h.handshakeOpener = nil
-		h.handshakeSealer = nil
-		h.logger.Debugf("Dropping Handshake keys.")
+	if h.handshakeAEAD != nil {
+		h.handshakeAEAD = nil
 		h.runner.DropKeys(protocol.EncryptionHandshake)
+		h.logger.Debugf("Dropping Handshake keys.")
 	}
 }
 
@@ -493,11 +488,11 @@ func (h *cryptoSetup) SetReadKey(suite *qtls.CipherSuite, trafficSecret []byte) 
 	switch h.readEncLevel {
 	case protocol.EncryptionInitial:
 		h.readEncLevel = protocol.EncryptionHandshake
-		h.handshakeOpener = newOpener(suite.AEAD(key, iv), hpDecrypter, false)
+		h.handshakeAEAD.SetReadKey(suite.AEAD(key, iv), hpDecrypter, false)
 		h.logger.Debugf("Installed Handshake Read keys")
 	case protocol.EncryptionHandshake:
 		h.readEncLevel = protocol.Encryption1RTT
-		h.opener = newOpener(suite.AEAD(key, iv), hpDecrypter, true)
+		h.oneRTTAEAD.SetReadKey(suite.AEAD(key, iv), hpDecrypter, true)
 		h.logger.Debugf("Installed 1-RTT Read keys")
 	default:
 		panic("unexpected read encryption level")
@@ -519,11 +514,11 @@ func (h *cryptoSetup) SetWriteKey(suite *qtls.CipherSuite, trafficSecret []byte)
 	switch h.writeEncLevel {
 	case protocol.EncryptionInitial:
 		h.writeEncLevel = protocol.EncryptionHandshake
-		h.handshakeSealer = newSealer(suite.AEAD(key, iv), hpEncrypter, false)
+		h.handshakeAEAD.SetWriteKey(suite.AEAD(key, iv), hpEncrypter, false)
 		h.logger.Debugf("Installed Handshake Write keys")
 	case protocol.EncryptionHandshake:
 		h.writeEncLevel = protocol.Encryption1RTT
-		h.sealer = newSealer(suite.AEAD(key, iv), hpEncrypter, true)
+		h.oneRTTAEAD.SetWriteKey(suite.AEAD(key, iv), hpEncrypter, true)
 		h.logger.Debugf("Installed 1-RTT Write keys")
 	default:
 		panic("unexpected write encryption level")
@@ -570,11 +565,11 @@ func (h *cryptoSetup) GetSealer() (protocol.EncryptionLevel, Sealer) {
 
 	switch h.writeEncLevel {
 	case protocol.EncryptionInitial:
-		return protocol.EncryptionInitial, h.initialSealer
+		return protocol.EncryptionInitial, h.initialAEAD.GetSealer()
 	case protocol.EncryptionHandshake:
-		return protocol.EncryptionHandshake, h.handshakeSealer
+		return protocol.EncryptionHandshake, h.handshakeAEAD.GetSealer()
 	case protocol.Encryption1RTT:
-		return protocol.Encryption1RTT, h.sealer
+		return protocol.Encryption1RTT, h.oneRTTAEAD.GetSealer()
 	default:
 		panic("")
 	}
@@ -588,17 +583,17 @@ func (h *cryptoSetup) GetSealerWithEncryptionLevel(level protocol.EncryptionLeve
 
 	switch level {
 	case protocol.EncryptionInitial:
-		return h.initialSealer, nil
+		return h.initialAEAD.GetSealer(), nil
 	case protocol.EncryptionHandshake:
-		if h.handshakeSealer == nil {
-			return nil, errNoSealer
+		if sealer := h.handshakeAEAD.GetSealer(); sealer != nil {
+			return sealer, nil
 		}
-		return h.handshakeSealer, nil
+		return nil, errNoSealer
 	case protocol.Encryption1RTT:
-		if h.sealer == nil {
-			return nil, errNoSealer
+		if sealer := h.oneRTTAEAD.GetSealer(); sealer != nil {
+			return sealer, nil
 		}
-		return h.sealer, nil
+		return nil, errNoSealer
 	default:
 		return nil, errNoSealer
 	}
@@ -610,24 +605,24 @@ func (h *cryptoSetup) GetOpener(level protocol.EncryptionLevel) (Opener, error) 
 
 	switch level {
 	case protocol.EncryptionInitial:
-		if h.initialOpener == nil {
+		if h.initialAEAD == nil {
 			return nil, ErrKeysDropped
 		}
-		return h.initialOpener, nil
+		return h.initialAEAD.GetOpener(), nil
 	case protocol.EncryptionHandshake:
-		if h.handshakeOpener == nil {
-			if h.initialOpener != nil {
-				return nil, ErrOpenerNotYetAvailable
-			}
-			// if the initial opener is also not available, the keys were already dropped
+		if h.handshakeAEAD == nil {
 			return nil, ErrKeysDropped
 		}
-		return h.handshakeOpener, nil
-	case protocol.Encryption1RTT:
-		if h.opener == nil {
-			return nil, ErrOpenerNotYetAvailable
+		opener := h.handshakeAEAD.GetOpener()
+		if opener != nil {
+			return opener, nil
 		}
-		return h.opener, nil
+		return nil, ErrOpenerNotYetAvailable
+	case protocol.Encryption1RTT:
+		if opener := h.oneRTTAEAD.GetOpener(); opener != nil {
+			return opener, nil
+		}
+		return nil, ErrOpenerNotYetAvailable
 	default:
 		return nil, fmt.Errorf("CryptoSetup: no opener with encryption level %s", level)
 	}
