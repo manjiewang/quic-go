@@ -5,6 +5,8 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 
+	"github.com/lucas-clemente/quic-go/internal/protocol"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -42,20 +44,20 @@ var _ = Describe("AEAD", func() {
 
 		It("encrypts and decrypts a message", func() {
 			encrypted := sealer.Seal(nil, msg, 0x1337, ad)
-			opened, err := opener.Open(nil, encrypted, 0x1337, ad)
+			opened, err := opener.Open(nil, encrypted, 0x1337, protocol.KeyPhaseUndefined, ad)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(opened).To(Equal(msg))
 		})
 
 		It("fails to open a message if the associated data is not the same", func() {
 			encrypted := sealer.Seal(nil, msg, 0x1337, ad)
-			_, err := opener.Open(nil, encrypted, 0x1337, []byte("wrong ad"))
+			_, err := opener.Open(nil, encrypted, 0x1337, protocol.KeyPhaseUndefined, []byte("wrong ad"))
 			Expect(err).To(MatchError("cipher: message authentication failed"))
 		})
 
 		It("fails to open a message if the packet number is not the same", func() {
 			encrypted := sealer.Seal(nil, msg, 0x1337, ad)
-			_, err := opener.Open(nil, encrypted, 0x42, ad)
+			_, err := opener.Open(nil, encrypted, 0x42, protocol.KeyPhaseUndefined, ad)
 			Expect(err).To(MatchError("cipher: message authentication failed"))
 		})
 	})

@@ -85,7 +85,11 @@ func (u *packetUnpacker) Unpack(hdr *wire.Header, data []byte) (*unpackedPacket,
 		extHdr.PacketNumber,
 	)
 
-	decrypted, err := opener.Open(data[extHdrLen:extHdrLen], data[extHdrLen:], pn, data[:extHdrLen])
+	var keyPhase protocol.KeyPhase
+	if !extHdr.IsLongHeader {
+		keyPhase = extHdr.KeyPhase
+	}
+	decrypted, err := opener.Open(data[extHdrLen:extHdrLen], data[extHdrLen:], pn, keyPhase, data[:extHdrLen])
 	if err != nil {
 		return nil, err
 	}

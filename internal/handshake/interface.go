@@ -10,13 +10,13 @@ import (
 
 // Opener opens a packet
 type Opener interface {
-	Open(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) ([]byte, error)
+	Open(dst, src []byte, pn protocol.PacketNumber, kp protocol.KeyPhase, associatedData []byte) ([]byte, error)
 	DecryptHeader(sample []byte, firstByte *byte, pnBytes []byte)
 }
 
 // Sealer seals a packet
 type Sealer interface {
-	Seal(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) []byte
+	Seal(dst, src []byte, pn protocol.PacketNumber, associatedData []byte) []byte
 	EncryptHeader(sample []byte, firstByte *byte, pnBytes []byte)
 	Overhead() int
 }

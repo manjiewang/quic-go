@@ -97,11 +97,11 @@ var _ = Describe("Initial AEAD using AES-GCM", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		clientMessage := clientAEAD.GetSealer().Seal(nil, []byte("foobar"), 42, []byte("aad"))
-		m, err := serverAEAD.GetOpener().Open(nil, clientMessage, 42, []byte("aad"))
+		m, err := serverAEAD.GetOpener().Open(nil, clientMessage, 42, protocol.KeyPhaseUndefined, []byte("aad"))
 		Expect(err).ToNot(HaveOccurred())
 		Expect(m).To(Equal([]byte("foobar")))
 		serverMessage := serverAEAD.GetSealer().Seal(nil, []byte("raboof"), 99, []byte("daa"))
-		m, err = clientAEAD.GetOpener().Open(nil, serverMessage, 99, []byte("daa"))
+		m, err = clientAEAD.GetOpener().Open(nil, serverMessage, 99, protocol.KeyPhaseUndefined, []byte("daa"))
 		Expect(err).ToNot(HaveOccurred())
 		Expect(m).To(Equal([]byte("raboof")))
 	})
@@ -115,7 +115,7 @@ var _ = Describe("Initial AEAD using AES-GCM", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		clientMessage := clientAEAD.GetSealer().Seal(nil, []byte("foobar"), 42, []byte("aad"))
-		_, err = serverAEAD.GetOpener().Open(nil, clientMessage, 42, []byte("aad"))
+		_, err = serverAEAD.GetOpener().Open(nil, clientMessage, 42, protocol.KeyPhaseUndefined, []byte("aad"))
 		Expect(err).To(MatchError("cipher: message authentication failed"))
 	})
 
