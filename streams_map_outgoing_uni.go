@@ -13,7 +13,10 @@ import (
 
 type outgoingUniStreamsMap struct {
 	mutex sync.RWMutex
-	cond  sync.Cond
+
+	openQueue          map[protocol.StreamNum]chan struct{}
+	lowestInOpenQueue  protocol.StreamNum // if the map is empty, this value has no meaning
+	highestInOpenQueue protocol.StreamNum // if the map is empty, this value has no meaning
 
 	streams map[protocol.StreamNum]sendStreamI
 
@@ -31,15 +34,14 @@ func newOutgoingUniStreamsMap(
 	newStream func(protocol.StreamNum) sendStreamI,
 	queueControlFrame func(wire.Frame),
 ) *outgoingUniStreamsMap {
-	m := &outgoingUniStreamsMap{
+	return &outgoingUniStreamsMap{
 		streams:              make(map[protocol.StreamNum]sendStreamI),
+		openQueue:            make(map[protocol.StreamNum]chan struct{}),
 		maxStream:            protocol.InvalidStreamNum,
 		nextStream:           1,
 		newStream:            newStream,
 		queueStreamIDBlocked: func(f *wire.StreamsBlockedFrame) { queueControlFrame(f) },
 	}
-	m.cond.L = &m.mutex
-	return m
 }
 
 func (m *outgoingUniStreamsMap) OpenStream() (sendStreamI, error) {
@@ -61,19 +63,40 @@ func (m *outgoingUniStreamsMap) OpenStreamSync() (sendStreamI, error) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	for {
-		if m.closeErr != nil {
-			return nil, m.closeErr
-		}
-		str, err := m.openStreamImpl()
-		if err == nil {
-			return str, nil
-		}
-		if err != nil && err != errTooManyOpenStreams {
-			return nil, streamOpenErr{err}
-		}
-		m.cond.Wait()
+	if m.closeErr != nil {
+		return nil, m.closeErr
 	}
+	str, err := m.openStreamImpl()
+	if err == nil {
+		return str, nil
+	}
+	if err != errTooManyOpenStreams {
+		return nil, streamOpenErr{err}
+	}
+
+	waitChan := make(chan struct{})
+	if len(m.openQueue) == 0 {
+		m.lowestInOpenQueue = m.nextStream
+		m.highestInOpenQueue = m.nextStream
+	} else {
+		m.highestInOpenQueue++
+	}
+	m.openQueue[m.highestInOpenQueue] = waitChan
+
+	m.mutex.Unlock()
+
+	<-waitChan
+
+	m.mutex.Lock()
+	if m.closeErr != nil {
+		return nil, m.closeErr
+	}
+	str, err = m.openStreamImpl()
+	if err == nil {
+		return str, nil
+	}
+	// should never happen
+	return nil, streamOpenErr{err}
 }
 
 func (m *outgoingUniStreamsMap) openStreamImpl() (sendStreamI, error) {
@@ -127,12 +150,24 @@ func (m *outgoingUniStreamsMap) DeleteStream(num protocol.StreamNum) error {
 
 func (m *outgoingUniStreamsMap) SetMaxStream(num protocol.StreamNum) {
 	m.mutex.Lock()
-	if num > m.maxStream {
-		m.maxStream = num
-		m.blockedSent = false
-		m.cond.Broadcast()
+	defer m.mutex.Unlock()
+
+	if num <= m.maxStream {
+		return
 	}
-	m.mutex.Unlock()
+	m.maxStream = num
+	m.blockedSent = false
+	if len(m.openQueue) > 0 {
+		maxNum := num
+		if maxNum > m.highestInOpenQueue {
+			maxNum = m.highestInOpenQueue
+		}
+		for n := m.lowestInOpenQueue; n <= maxNum; n++ {
+			close(m.openQueue[n])
+			delete(m.openQueue, n)
+		}
+		m.lowestInOpenQueue = maxNum + 1
+	}
 }
 
 func (m *outgoingUniStreamsMap) CloseWithError(err error) {
@@ -141,6 +176,8 @@ func (m *outgoingUniStreamsMap) CloseWithError(err error) {
 	for _, str := range m.streams {
 		str.closeForShutdown(err)
 	}
-	m.cond.Broadcast()
+	for _, c := range m.openQueue {
+		close(c)
+	}
 	m.mutex.Unlock()
 }

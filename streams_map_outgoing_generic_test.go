@@ -122,6 +122,34 @@ var _ = Describe("Streams Map (outgoing)", func() {
 			Eventually(done).Should(BeClosed())
 		})
 
+		It("opens streams in the right order", func() {
+			mockSender.EXPECT().queueControlFrame(gomock.Any()).AnyTimes()
+			done1 := make(chan struct{})
+			go func() {
+				defer GinkgoRecover()
+				str, err := m.OpenStreamSync()
+				Expect(err).ToNot(HaveOccurred())
+				Expect(str.(*mockGenericStream).num).To(Equal(protocol.StreamNum(1)))
+				close(done1)
+			}()
+			Consistently(done1).ShouldNot(BeClosed())
+			done2 := make(chan struct{})
+			go func() {
+				defer GinkgoRecover()
+				str, err := m.OpenStreamSync()
+				Expect(err).ToNot(HaveOccurred())
+				Expect(str.(*mockGenericStream).num).To(Equal(protocol.StreamNum(2)))
+				close(done2)
+			}()
+			Consistently(done2).ShouldNot(BeClosed())
+
+			m.SetMaxStream(1)
+			Eventually(done1).Should(BeClosed())
+			Consistently(done2).ShouldNot(BeClosed())
+			m.SetMaxStream(2)
+			Eventually(done2).Should(BeClosed())
+		})
+
 		It("stops opening synchronously when it is closed", func() {
 			mockSender.EXPECT().queueControlFrame(gomock.Any())
 			testErr := errors.New("test error")

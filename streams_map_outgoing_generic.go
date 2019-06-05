@@ -11,7 +11,10 @@ import (
 //go:generate genny -in $GOFILE -out streams_map_outgoing_uni.go gen "item=sendStreamI Item=UniStream streamTypeGeneric=protocol.StreamTypeUni"
 type outgoingItemsMap struct {
 	mutex sync.RWMutex
-	cond  sync.Cond
+
+	openQueue          map[protocol.StreamNum]chan struct{}
+	lowestInOpenQueue  protocol.StreamNum // if the map is empty, this value has no meaning
+	highestInOpenQueue protocol.StreamNum // if the map is empty, this value has no meaning
 
 	streams map[protocol.StreamNum]item
 
@@ -29,15 +32,14 @@ func newOutgoingItemsMap(
 	newStream func(protocol.StreamNum) item,
 	queueControlFrame func(wire.Frame),
 ) *outgoingItemsMap {
-	m := &outgoingItemsMap{
+	return &outgoingItemsMap{
 		streams:              make(map[protocol.StreamNum]item),
+		openQueue:            make(map[protocol.StreamNum]chan struct{}),
 		maxStream:            protocol.InvalidStreamNum,
 		nextStream:           1,
 		newStream:            newStream,
 		queueStreamIDBlocked: func(f *wire.StreamsBlockedFrame) { queueControlFrame(f) },
 	}
-	m.cond.L = &m.mutex
-	return m
 }
 
 func (m *outgoingItemsMap) OpenStream() (item, error) {
@@ -59,19 +61,40 @@ func (m *outgoingItemsMap) OpenStreamSync() (item, error) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	for {
-		if m.closeErr != nil {
-			return nil, m.closeErr
-		}
-		str, err := m.openStreamImpl()
-		if err == nil {
-			return str, nil
-		}
-		if err != nil && err != errTooManyOpenStreams {
-			return nil, streamOpenErr{err}
-		}
-		m.cond.Wait()
+	if m.closeErr != nil {
+		return nil, m.closeErr
 	}
+	str, err := m.openStreamImpl()
+	if err == nil {
+		return str, nil
+	}
+	if err != errTooManyOpenStreams {
+		return nil, streamOpenErr{err}
+	}
+
+	waitChan := make(chan struct{})
+	if len(m.openQueue) == 0 {
+		m.lowestInOpenQueue = m.nextStream
+		m.highestInOpenQueue = m.nextStream
+	} else {
+		m.highestInOpenQueue++
+	}
+	m.openQueue[m.highestInOpenQueue] = waitChan
+
+	m.mutex.Unlock()
+
+	<-waitChan
+
+	m.mutex.Lock()
+	if m.closeErr != nil {
+		return nil, m.closeErr
+	}
+	str, err = m.openStreamImpl()
+	if err == nil {
+		return str, nil
+	}
+	// should never happen
+	return nil, streamOpenErr{err}
 }
 
 func (m *outgoingItemsMap) openStreamImpl() (item, error) {
@@ -125,12 +148,24 @@ func (m *outgoingItemsMap) DeleteStream(num protocol.StreamNum) error {
 
 func (m *outgoingItemsMap) SetMaxStream(num protocol.StreamNum) {
 	m.mutex.Lock()
-	if num > m.maxStream {
-		m.maxStream = num
-		m.blockedSent = false
-		m.cond.Broadcast()
+	defer m.mutex.Unlock()
+
+	if num <= m.maxStream {
+		return
 	}
-	m.mutex.Unlock()
+	m.maxStream = num
+	m.blockedSent = false
+	if len(m.openQueue) > 0 {
+		maxNum := num
+		if maxNum > m.highestInOpenQueue {
+			maxNum = m.highestInOpenQueue
+		}
+		for n := m.lowestInOpenQueue; n <= maxNum; n++ {
+			close(m.openQueue[n])
+			delete(m.openQueue, n)
+		}
+		m.lowestInOpenQueue = maxNum + 1
+	}
 }
 
 func (m *outgoingItemsMap) CloseWithError(err error) {
@@ -139,6 +174,8 @@ func (m *outgoingItemsMap) CloseWithError(err error) {
 	for _, str := range m.streams {
 		str.closeForShutdown(err)
 	}
-	m.cond.Broadcast()
+	for _, c := range m.openQueue {
+		close(c)
+	}
 	m.mutex.Unlock()
 }
